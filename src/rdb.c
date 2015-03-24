@@ -1544,3 +1544,62 @@ void bgsaveCommand(redisClient *c) {
         addReply(c,shared.err);
     }
 }
+
+int rdbBackup(void){
+    pid_t childpid;
+    long long start;
+
+    if (server.rdb_child_pid != -1) return REDIS_ERR;
+
+    server.dirty_before_bgsave = server.dirty;
+    server.lastbgsave_try = time(NULL);
+
+    start = ustime();
+    if ((childpid = fork()) == 0) {
+	time_t now = time(NULL);        
+	int retval;
+	int len = strlen(server.rdb_filename) + 64;
+	char filename[len];
+	char buf[64];
+
+	strftime(buf,sizeof(buf),"%Y-%m-%d %H-%M-%S",localtime(&now));
+	snprintf(filename, len, "%s-backup-%s", server.rdb_filename, buf);	
+
+        /* Child */
+        closeListeningSockets(0);
+        redisSetProcTitle("redis-rdb-backup");
+        retval = rdbSave(filename);
+        if (retval == REDIS_OK) {
+            size_t private_dirty = zmalloc_get_private_dirty();
+
+            if (private_dirty) {
+                redisLog(REDIS_NOTICE,
+                    "RDB: %zu MB of memory used by copy-on-write",
+                    private_dirty/(1024*1024));
+            }
+        }
+        exitFromChild((retval == REDIS_OK) ? 0 : 1);
+    } else {
+        /* Parent */
+        server.stat_fork_time = ustime()-start;
+        server.stat_fork_rate = (double) zmalloc_used_memory() * 1000000 / server.stat_fork_time / (1024*1024*1024); /* GB per second. */
+        latencyAddSampleIfNeeded("fork",server.stat_fork_time/1000);
+        if (childpid == -1) {
+            server.lastbgsave_status = REDIS_ERR;
+            redisLog(REDIS_WARNING,"Can't backup: fork: %s",
+                strerror(errno));
+            return REDIS_ERR;
+        }
+        redisLog(REDIS_NOTICE,"Backup saving started by pid %d",childpid);
+	/* Flushall memory*/
+	signalFlushedDb(-1);
+    	server.dirty += emptyDb(NULL);
+
+        server.rdb_save_time_start = time(NULL);
+        server.rdb_child_pid = childpid;
+        server.rdb_child_type = REDIS_RDB_CHILD_TYPE_DISK;
+        updateDictResizePolicy();
+        return REDIS_OK;
+    }
+    return REDIS_OK; /* unreached */
+}

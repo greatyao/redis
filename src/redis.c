@@ -2940,7 +2940,7 @@ int freeMemoryIfNeeded(void) {
     if (mem_used <= server.maxmemory) return REDIS_OK;
 
     if (server.maxmemory_policy == REDIS_MAXMEMORY_NO_EVICTION)
-        return REDIS_ERR; /* We need to free memory, but policy forbids. */
+	return rdbBackup(); /* When memory overflow, dump memory into file and then release memory*/
 
     /* Compute how much memory we need to free. */
     mem_tofree = mem_used - server.maxmemory;
