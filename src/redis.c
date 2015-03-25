@@ -983,6 +983,17 @@ void updateCachedTime(void) {
     server.mstime = mstime();
 }
 
+/* We need dump all data into disk day by day*/
+void updateDailyBackupTime(){
+    time_t now = time(NULL);  
+    if(server.backuptime == 0){
+        struct tm *ptm = localtime(&now);
+        server.backuptime = now + 3600*(23-ptm->tm_hour) + 60*(59-ptm->tm_min) + (59-ptm->tm_sec);
+    }    
+    else
+        server.backuptime = now + 3600*24;
+}
+
 /* This is our timer interrupt, called server.hz times per second.
  * Here is where we do a number of things that need to be done asynchronously.
  * For instance:
@@ -1083,6 +1094,14 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
 
     /* Handle background operations on Redis databases. */
     databasesCron();
+
+    /* dump/Backup all data into disk daily*/
+    if(server.backuptime == 0)
+        updateDailyBackupTime();
+    if(server.unixtime >= server.backuptime){
+        rdbBackup();
+        updateDailyBackupTime();
+    }
 
     /* Start a scheduled AOF rewrite if this was requested by the user while
      * a BGSAVE was in progress. */

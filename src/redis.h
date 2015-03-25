@@ -803,6 +803,7 @@ struct redisServer {
     size_t zset_max_ziplist_entries;
     size_t zset_max_ziplist_value;
     size_t hll_sparse_max_bytes;
+    time_t backuptime;      /* Unix time for daily backup cycle. */
     time_t unixtime;        /* Unix time sampled every cron cycle. */
     long long mstime;       /* Like 'unixtime' but with milliseconds resolution. */
     /* Pubsub */
